@@ -575,7 +575,6 @@ def controlCallback(data):
 
     playerAccX = limitAcceleration(-data.x,ACCXLIMIT)/(FPS*FPS*SCALING)
     playerAccY = limitAcceleration(-data.y,ACCYLIMIT)/(FPS*FPS*SCALING)
-    #print(playerAccY)
 
 def limitAcceleration(accUser,limit):
     if accUser > limit:
