@@ -6,9 +6,9 @@
 #include "geometry_msgs/Vector3.h"
 #include "math.h"
 
-#define VX_SEARCH 1
+#define VX_SEARCH 2
 #define VY_VERTICAL_SCAN 2
-#define VX_CROSS_BARRIER 3
+#define VX_CROSS_BARRIER 2
 
 class StateMachine {
   private:
@@ -25,6 +25,19 @@ class StateMachine {
       }
     }
     return 0;
+  }
+
+  double distance_from_barrier(const std::vector<double> ranges, const std::vector<double> angles){
+    double min_dist = -1;
+    if(!ranges.empty()){
+      for(int i=2; i<ranges.size()-2; i++){
+        double dist = ranges[i]*cos(angles[i]);
+        if(dist < min_dist || min_dist == -1){
+          min_dist = dist;
+        }
+      }
+    }
+    return min_dist;
   }
 
   int obstacle_close(const std::vector<double> ranges){
@@ -92,8 +105,9 @@ class StateMachine {
     double vy_goal;
     static int vertical_dir;
     static int vertical_scan_initialized = 0;
-    static int dead_distance_iter = 0;
     static double integral_acc_y = 0;
+    static double dead_distance = 0;
+    static int changed_direction = 0;
 
     switch(m_state){
       case SEARCH: 
@@ -108,8 +122,20 @@ class StateMachine {
         }
         else{
           double dir = compute_direction(ranges, angles);
-          vx_goal = VX_SEARCH;
+          double dist_from_barrier = distance_from_barrier(ranges, angles);
+          if(dist_from_barrier < 1.25){
+            vx_goal = 1.25;
+          }
+          else{
+            vx_goal = 2;
+          }
           vy_goal = 20*vx_goal*dir;
+          if(vy_goal > 2){
+            vy_goal = 2;
+          }
+          else if(vy_goal < -2){
+            vy_goal = -2;
+          }
           //vy_goal = 0;
           break;
         }
@@ -120,6 +146,7 @@ class StateMachine {
           m_state = CROSS_BARRIER;
           ROS_INFO("cross");
           vertical_scan_initialized = 0;
+          changed_direction = 0;
         }
         else{
           vx_goal = 0;
@@ -128,12 +155,14 @@ class StateMachine {
             vertical_dir = adjacent_beams_detector(ranges, angles);
             vertical_scan_initialized = 1;
           }
-          else if(floor_close(ranges) && (vertical_dir == DOWN || vertical_dir == NONE)){
-            ROS_INFO("EHOH");
+          else if(floor_close(ranges) && (vertical_dir == DOWN || vertical_dir == NONE) && !changed_direction){
             vertical_dir = UP;
+            changed_direction = 1;
           }
-          else if(ceiling_close(ranges) && vertical_dir == UP){
+          else if(ceiling_close(ranges) && vertical_dir == UP && !changed_direction){
+            ROS_INFO("EHOH");
             vertical_dir = DOWN;
+            changed_direction = 1;
           }
           
           if(vertical_dir == UP){
@@ -145,9 +174,11 @@ class StateMachine {
           else if(vertical_dir == NONE){
             if(integral_acc_y >= 0){
               vy_goal = VY_VERTICAL_SCAN;
+              vertical_dir = UP;
             }
             else{
               vy_goal = -VY_VERTICAL_SCAN;
+              vertical_dir = DOWN;
             }
           }
           break;
@@ -157,20 +188,25 @@ class StateMachine {
         //ROS_INFO("Cross barrier");
         vy_goal = 0;
         if(!obstacle_close(ranges)){
-          if(++dead_distance_iter == 2){
-            dead_distance_iter = 0;
+          dead_distance += vel_msg->x/30.0;
+          if(dead_distance > 0.15){
+            dead_distance = 0;
             m_state = SEARCH;
             integral_acc_y = 0;
             ROS_INFO("search");
           }
+          vx_goal = VX_CROSS_BARRIER;
         }
-        vx_goal = VX_CROSS_BARRIER;
+        else{
+          vx_goal = 3;
+        }
+        
         break;
       default: break;
     }
 
-    acc_cmd.x = 20*(vx_goal-vel_msg->x);
-    acc_cmd.y = 20*(vy_goal-vel_msg->y);
+    acc_cmd.x = 50*(vx_goal-vel_msg->x);
+    acc_cmd.y = 50*(vy_goal-vel_msg->y);
     integral_acc_y += acc_cmd.y;
     return acc_cmd;
   }
