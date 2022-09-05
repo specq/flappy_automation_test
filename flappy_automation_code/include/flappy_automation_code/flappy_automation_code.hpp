@@ -27,6 +27,17 @@ class StateMachine {
     return 0;
   }
 
+  int no_barrier_detected(const std::vector<double> ranges){
+    if(!ranges.empty()){
+      for(int i=1; i<ranges.size()-1; i++){
+        if(ranges[i] < 2.5){
+          return 0;
+        }
+      }
+    }
+    return 1;
+  }
+
   double distance_from_barrier(const std::vector<double> ranges, const std::vector<double> angles){
     double min_dist = -1;
     if(!ranges.empty()){
@@ -107,26 +118,35 @@ class StateMachine {
     static int vertical_scan_initialized = 0;
     static double integral_vel_y = 0;
     static double dead_distance = 0;
+    static double y_pos = 0;
 
+    ROS_INFO("%f", vel_msg->x);
+
+    y_pos += vel_msg->y/30.0;
+    //ROS_INFO("%f", y_pos);
     switch(m_state){
       case SEARCH: 
-        //ROS_INFO("Search");
+        if(!ranges.empty() && no_barrier_detected(ranges)){
+          if(abs(ranges.front()-ranges.back())<0.05){
+            y_pos = 0;
+          }
+        }
         if(imminent_collision(ranges)){
           m_state = VERTICAL_SCAN;
-          //ROS_INFO("vertical_scan");
+          ROS_INFO("vertical_scan");
         }
         else if(front_is_clear(ranges) && obstacle_close(ranges)){
           m_state = CROSS_BARRIER;
-          //ROS_INFO("cross");
+          ROS_INFO("cross");
         }
         else{
           double dir = compute_direction(ranges, angles);
           double dist_from_barrier = distance_from_barrier(ranges, angles);
           if(dist_from_barrier < 1.25){
-            vx_goal = 1.25;
+            vx_goal = 1.6;
           }
           else{
-            vx_goal = 2;
+            vx_goal = 2.25;
           }
           vy_goal = 20*vx_goal*dir;
           if(vy_goal > 2){
@@ -146,6 +166,7 @@ class StateMachine {
         if(front_is_clear(ranges)){  // Check if Flappy bird is facing the opening
           m_state = CROSS_BARRIER;
           vertical_scan_initialized = 0;
+          ROS_INFO("cross");
         }
         else{
           vx_goal = 0; // Stop Flappy bird
@@ -153,10 +174,10 @@ class StateMachine {
             vertical_dir = adjacent_beams_detector(ranges, angles);
             vertical_scan_initialized = 1;
           }
-          else if(floor_close(ranges) && vertical_dir == DOWN){   // Go up if the floor is detected
+          else if(floor_close(ranges) && y_pos < -0.9 && vertical_dir == DOWN){   // Go up if the floor is detected
             vertical_dir = UP;
           }
-          else if(ceiling_close(ranges) && vertical_dir == UP){   // Go down if the ceiling is detected
+          else if(ceiling_close(ranges) && y_pos > 0.9 && vertical_dir == UP){   // Go down if the ceiling is detected
             vertical_dir = DOWN;
           }
           
@@ -195,12 +216,12 @@ class StateMachine {
             dead_distance = 0;
             m_state = SEARCH;
             integral_vel_y = 0;
-            //ROS_INFO("search");
+            ROS_INFO("search");
           }
-          vx_goal = VX_CROSS_BARRIER;
+          vx_goal = 2.75;
         }
         else{
-          vx_goal = 3;
+          vx_goal = 2.75;
         }
         
         break;

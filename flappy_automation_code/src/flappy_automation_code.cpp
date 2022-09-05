@@ -30,6 +30,7 @@ void velCallback(const geometry_msgs::Vector3::ConstPtr& msg)
 void laserScanCallback(const sensor_msgs::LaserScan::ConstPtr& msg)
 {
   // Get laser measurements
+  
   laser_scanner.update(msg);
 }
 
