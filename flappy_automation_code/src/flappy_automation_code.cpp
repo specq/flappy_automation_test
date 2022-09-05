@@ -18,25 +18,19 @@ void velCallback(const geometry_msgs::Vector3::ConstPtr& msg)
   // msg has the format of geometry_msgs::Vector3
   // Example of publishing acceleration command on velocity velCallback
   geometry_msgs::Vector3 acc_cmd;
-  ROS_INFO("%f, %f", msg->x, msg->y);
+
+  // Get the acceleration command
   acc_cmd = state_machine.compute_acc(laser_scanner.get_ranges(),
                                       laser_scanner.get_angles(),
                                       msg);
-  /**acc_cmd.x = 0;
-  acc_cmd.y = 0;*/
-
-  //ROS_INFO("%f, %f", acc_cmd.x, acc_cmd.y);
 
   pub_acc_cmd.publish(acc_cmd);
 }
 
 void laserScanCallback(const sensor_msgs::LaserScan::ConstPtr& msg)
 {
+  // Get laser measurements
   laser_scanner.update(msg);
-  //msg has the format of sensor_msgs::LaserScan
-  //print laser angle and range
-  /*ROS_INFO("%f, %f, %f, %f, %f, %f, %f, %f, %f", msg->ranges[0], msg->ranges[1],msg->ranges[2], msg->ranges[3], 
-                                                 msg->ranges[4], msg->ranges[5], msg->ranges[6], msg->ranges[7], msg->ranges[8]);*/
 }
 
 int main(int argc, char **argv)

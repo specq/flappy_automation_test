@@ -105,20 +105,19 @@ class StateMachine {
     double vy_goal;
     static int vertical_dir;
     static int vertical_scan_initialized = 0;
-    static double integral_acc_y = 0;
+    static double integral_vel_y = 0;
     static double dead_distance = 0;
-    static int changed_direction = 0;
 
     switch(m_state){
       case SEARCH: 
         //ROS_INFO("Search");
         if(imminent_collision(ranges)){
           m_state = VERTICAL_SCAN;
-          ROS_INFO("vertical_scan");
+          //ROS_INFO("vertical_scan");
         }
         else if(front_is_clear(ranges) && obstacle_close(ranges)){
           m_state = CROSS_BARRIER;
-          ROS_INFO("cross");
+          //ROS_INFO("cross");
         }
         else{
           double dir = compute_direction(ranges, angles);
@@ -139,40 +138,40 @@ class StateMachine {
           //vy_goal = 0;
           break;
         }
+      
+      /** Vertical scan state: If flappy bird is too close from the barrier while he did not find the openeing,
+       *  he stops and scans the barrier vertically until he finds the openeing
+      */
       case VERTICAL_SCAN: 
-        //ROS_INFO("Vertical scan");
-
-        if(front_is_clear(ranges)){
+        if(front_is_clear(ranges)){  // Check if Flappy bird is facing the opening
           m_state = CROSS_BARRIER;
-          ROS_INFO("cross");
           vertical_scan_initialized = 0;
-          changed_direction = 0;
         }
         else{
-          vx_goal = 0;
-          // Choose direction (up or down)
-          if(!vertical_scan_initialized){
+          vx_goal = 0; // Stop Flappy bird
+          if(!vertical_scan_initialized){   // Choose scanning direction (up or down)
             vertical_dir = adjacent_beams_detector(ranges, angles);
             vertical_scan_initialized = 1;
           }
-          else if(floor_close(ranges) && (vertical_dir == DOWN || vertical_dir == NONE) && !changed_direction){
+          else if(floor_close(ranges) && vertical_dir == DOWN){   // Go up if the floor is detected
             vertical_dir = UP;
-            changed_direction = 1;
           }
-          else if(ceiling_close(ranges) && vertical_dir == UP && !changed_direction){
-            ROS_INFO("EHOH");
+          else if(ceiling_close(ranges) && vertical_dir == UP){   // Go down if the ceiling is detected
             vertical_dir = DOWN;
-            changed_direction = 1;
           }
           
-          if(vertical_dir == UP){
+          // Set the vertical speed according to the scanning direction
+          if(vertical_dir == UP){   
             vy_goal = VY_VERTICAL_SCAN;
           }
           else if(vertical_dir == DOWN){
             vy_goal = -VY_VERTICAL_SCAN;
           }
-          else if(vertical_dir == NONE){
-            if(integral_acc_y >= 0){
+          /** If no scanning direction was found using the adjacent free beams dectector,
+          /*  choose the scanning direction based on whether flappy bird has gone up or done during the search state
+          */
+          else if(vertical_dir == NONE){  
+            if(integral_vel_y >= 0){
               vy_goal = VY_VERTICAL_SCAN;
               vertical_dir = UP;
             }
@@ -183,17 +182,20 @@ class StateMachine {
           }
           break;
         }
-
+      /** Cross barrier state: Flappy bird moves horizontally until he no longer detects the barrier 
+       *  and reaches the dead distance. The dead distance is the distance covered after flappy bird
+       *  no longer detects the barrier. It avoids collisions with the barrier in case flappy bird faces 
+       *  the next opening to early.
+      */
       case CROSS_BARRIER: 
-        //ROS_INFO("Cross barrier");
         vy_goal = 0;
         if(!obstacle_close(ranges)){
           dead_distance += vel_msg->x/30.0;
           if(dead_distance > 0.15){
             dead_distance = 0;
             m_state = SEARCH;
-            integral_acc_y = 0;
-            ROS_INFO("search");
+            integral_vel_y = 0;
+            //ROS_INFO("search");
           }
           vx_goal = VX_CROSS_BARRIER;
         }
@@ -207,7 +209,7 @@ class StateMachine {
 
     acc_cmd.x = 50*(vx_goal-vel_msg->x);
     acc_cmd.y = 50*(vy_goal-vel_msg->y);
-    integral_acc_y += acc_cmd.y;
+    integral_vel_y += vel_msg->y/30.0;
     return acc_cmd;
   }
 };
