@@ -121,7 +121,7 @@ class StateMachine {
     static double dead_distance = 0;
     static double y_pos = 0;
 
-    //ROS_INFO("%f, %f", vel_msg->x, vel_msg->y);
+    ROS_INFO("%f, %f", vel_msg->x, vel_msg->y);
 
     y_pos += vel_msg->y/30.0;
 
@@ -135,44 +135,32 @@ class StateMachine {
         }
         if(imminent_collision(ranges)){
           m_state = VERTICAL_SCAN;
-          //ROS_INFO("vertical_scan");
+          ROS_INFO("vertical_scan");
         }
         else if(front_is_clear(ranges) && obstacle_close(ranges)){
           m_state = CROSS_BARRIER;
-          //ROS_INFO("cross");
+          ROS_INFO("cross");
         }
         else{
-          double dir = compute_direction(ranges, angles);
-          double dist_from_barrier = distance_from_barrier(ranges, angles);
-          /**if(dist_from_barrier < 1.25){
-            vx_goal = 1.6;
-          }
-          else{
-            vx_goal = 2.25;
-          }
-          vy_goal = 20*vx_goal*dir;
-          if(vy_goal > 2){
-            vy_goal = 2;
-          }
-          else if(vy_goal < -2){
-            vy_goal = -2;
-          }*/
-          /**
-           * @brief Si ne trouve pas les beams, aller cote oppose à la position en ligne droite avec un certain angle
-           * garder centrage au début afin de trouver le y0
-           * 
-           */
-          ROS_INFO("OK1");
           
+          double dist_from_barrier = distance_from_barrier(ranges, angles);
+          
+          int adj_beams_found = 0;
           if(!ranges.empty() && dist_from_barrier < 2){
             for(int i=0; i<ranges.size()-1; i++){
               if(ranges[i+1] > 2 && ranges[i] > 2){
-                if(++iter[i] >= 1){
-                  ROS_INFO("OK2");
-                  dir = (angles[i+1]+angles[i])/2;
-                  //ROS_INFO("%f", dir*180/3.14);
-                  vx_goal = 3*cos(dir);
-                  vy_goal = 3*sin(dir);
+                if(++iter[i] >= 3){
+                  //ROS_INFO("adj_beams");
+                  double dir;
+                  if(i <= 3){
+                    dir = angles[i];
+                  }
+                  else{
+                    dir = angles[i+1];
+                  }
+                  vx_goal = 2.5;
+                  vy_goal = vx_goal*tan(dir);
+                  adj_beams_found = 1;
                 }
               }
               else{
@@ -180,28 +168,23 @@ class StateMachine {
               }
             }
           }
-          /**if(!ranges.empty() && integral_vel_y < 0 && ranges[ranges.size()/2] > 2 && ranges[ranges.size()/2-1] > 2){
-            iter_up = 0;
-            if(++iter_down >= 3){
-              ROS_INFO("DOWN");
-              dir = (angles[angles.size()/2-1]+angles[angles.size()/2])/2;
-              vx_goal = 2*cos(dir);
-              vy_goal = 2*sin(dir);
+          if(!adj_beams_found){
+            //ROS_INFO("compute_dir");
+            double dir = compute_direction(ranges, angles);
+            if(dist_from_barrier < 1.25){
+              vx_goal = 1.6;
             }
-          } 
-          else if(!ranges.empty() && integral_vel_y > 0 && ranges[ranges.size()/2] > 2 && ranges[ranges.size()/2+1] > 2){
-            iter_down = 0;
-            if(++iter_up >= 3){
-              ROS_INFO("UP");
-              dir = (angles[angles.size()/2+1]+angles[angles.size()/2])/2;
-              vx_goal = 2*cos(dir);
-              vy_goal = 2*sin(dir);
+            else{
+              vx_goal = 2.25;
+            }
+            vy_goal = 20*vx_goal*dir;
+            if(vy_goal > 2){
+              vy_goal = 2;
+            }
+            else if(vy_goal < -2){
+              vy_goal = -2;
             }
           }
-          else{
-            iter_down = 0;
-            iter_up = 0;
-          }*/
 
           break;
         }
@@ -214,7 +197,7 @@ class StateMachine {
           m_state = CROSS_BARRIER;
           vertical_scan_initialized = 0;
           integral_vel_y = 0;
-          //ROS_INFO("cross");
+          ROS_INFO("cross");
         }
         else{
           vx_goal = 0; // Stop Flappy bird
@@ -260,10 +243,10 @@ class StateMachine {
         vy_goal = 0;
         if(!obstacle_close(ranges)){
           dead_distance += vel_msg->x/30.0;
-          if(dead_distance > 0.15){
+          if(dead_distance > 0.175){
             dead_distance = 0;
             m_state = SEARCH;
-            //ROS_INFO("search");
+            ROS_INFO("search");
           }
           vx_goal = 2.75;
         }
