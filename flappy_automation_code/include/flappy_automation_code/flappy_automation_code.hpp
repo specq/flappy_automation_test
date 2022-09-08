@@ -148,7 +148,7 @@ class StateMachine {
           int adj_beams_found = 0;
           if(!ranges.empty() && dist_from_barrier < 2){
             for(int i=0; i<ranges.size()-1; i++){
-              if(ranges[i+1] > 2 && ranges[i] > 2){
+              if(ranges[i+1]*cos(angles[i+1]) > dist_from_barrier+0.3 && ranges[i]*cos(angles[i]) > dist_from_barrier+0.3){
                 if(++iter[i] >= 3){
                   //ROS_INFO("adj_beams");
                   double dir;
