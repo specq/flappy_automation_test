@@ -9,6 +9,7 @@
 #define VX_SEARCH 2
 #define VY_VERTICAL_SCAN 2
 #define VX_CROSS_BARRIER 2
+#define ROS_RATE 30.0
 
 class StateMachine {
   private:
@@ -142,6 +143,10 @@ class StateMachine {
 
   public:
   StateMachine() : m_state(SEARCH){}
+
+  /**
+   * Compute and return the acceleration command based on the laser scans and the velocity
+   */
   geometry_msgs::Vector3 compute_acc(const std::vector<double> ranges, 
                                      const std::vector<double> angles, 
                                      const geometry_msgs::Vector3::ConstPtr& vel_msg){
@@ -169,16 +174,18 @@ class StateMachine {
     ROS_INFO("%f, %f", vel_msg->x, vel_msg->y);
 
     // Intergrate the velocity along the y-axis to compute the position of the bird with respect to the middle
-    y_pos += vel_msg->y/30.0;
+    y_pos += vel_msg->y/ROS_RATE;
 
     switch(m_state){
       /**
-       * Search state: 
-       * 
+       * Search state: After having crossed a barrier, flappy bird looks for the opening
+       * until it finds it or until it gets too close to the barrier. It either follows the 
+       * direction of 2 adjacent free beams or, if that is impossible, it follows a trajetory 
+       * based on the weighted average of the laser scan angles.
        */
       case SEARCH: 
         // Compute distance covered since the begininng of the search state
-        integral_vel_y += vel_msg->y/30.0;
+        integral_vel_y += vel_msg->y/ROS_RATE;
 
         // Before the first barrier, reset the y-axis origin if flappy bird is centered
         if(!ranges.empty() && no_barrier_detected(ranges)){
@@ -235,7 +242,7 @@ class StateMachine {
                 }
               }
               else{
-                iter[i] = 0;
+                adjacent_iter[i] = 0;
               }
             }
           }
@@ -267,7 +274,6 @@ class StateMachine {
               vy_goal = -2;
             }
           }
-
           break;
         }
       
@@ -275,22 +281,31 @@ class StateMachine {
        *  he stops and scans the barrier vertically until he finds the opening
       */
       case VERTICAL_SCAN: 
-        if(front_is_clear(ranges)){  // Check if Flappy bird is facing the opening
+        // Check if Flappy bird is facing the opening
+        if(front_is_clear(ranges)){ 
           m_state = CROSS_BARRIER;
           vertical_scan_initialized = 0;
           integral_vel_y = 0;
-          ROS_INFO("cross");
+          ROS_INFO("cross_barrier");
         }
+
+        // Vertical scan
         else{
           vx_goal = 0; // Stop Flappy bird
-          if(!vertical_scan_initialized){   // Choose scanning direction (up or down)
+
+          // Choose scanning direction (up or down)
+          if(!vertical_scan_initialized){   
             vertical_dir = adjacent_beams_detector(ranges, angles);
             vertical_scan_initialized = 1;
           }
-          else if(floor_close(ranges) && y_pos < -0.9 && vertical_dir == DOWN){   // Go up if the floor is detected
+
+          // Inverse direction and go up if the floor is detected
+          else if(floor_close(ranges) && y_pos < -0.9 && vertical_dir == DOWN){   
             vertical_dir = UP;
           }
-          else if(ceiling_close(ranges) && y_pos > 0.9 && vertical_dir == UP){   // Go down if the ceiling is detected
+
+          // Inverse direction and go down if the ceiling is detected
+          else if(ceiling_close(ranges) && y_pos > 0.9 && vertical_dir == UP){   
             vertical_dir = DOWN;
           }
           
@@ -316,16 +331,20 @@ class StateMachine {
           }
           break;
         }
+
       /** Cross barrier state: Flappy bird moves horizontally until he no longer detects the barrier 
        *  and reaches the dead distance. The dead distance is the distance covered after flappy bird
-       *  no longer detects the barrier. It avoids collisions with the barrier in case flappy bird faces 
+       *  no longer detects the barrier. It allows avoiding collisions with the barrier in case flappy bird faces 
        *  the next opening to early.
       */
       case CROSS_BARRIER: 
+        // Set the x and y velocities
         vy_goal = 0;
         vx_goal = 2.75;
+
+        // If the barrier is no longer detected, cross a dead distance of 0.175 m before entering the serach state
         if(!obstacle_close(ranges)){
-          dead_distance += vel_msg->x/30.0;
+          dead_distance += vel_msg->x/ROS_RATE; // Integrate the velocity
           if(dead_distance > 0.175){
             dead_distance = 0;
             m_state = SEARCH;
@@ -336,8 +355,10 @@ class StateMachine {
       default: break;
     }
 
+    // P controller to compute the acceleration command
     acc_cmd.x = 50*(vx_goal-vel_msg->x);
     acc_cmd.y = 50*(vy_goal-vel_msg->y);
+
     return acc_cmd;
   }
 };
