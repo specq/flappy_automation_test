@@ -16,10 +16,13 @@ class StateMachine {
   enum Direction {UP, DOWN, NONE};
   int m_state;
 
-  int imminent_collision(const std::vector<double> ranges){
+  /**
+   * Return 1 if flappy is less than 0.75 m away from the barrier, Return 0 otherwise
+   */
+  int imminent_collision(const std::vector<double> ranges, const std::vector<double> angles){
     if(!ranges.empty()){
       for(int i=0; i<ranges.size(); i++){
-        if(ranges[i] < 0.75){
+        if(ranges[i]*cos(angles[i]) < 0.75){
           return 1;
         } 
       }
@@ -27,6 +30,10 @@ class StateMachine {
     return 0;
   }
 
+  /**
+   * Return 0 if a barrier is detected, 1 otherwise
+   * It allows knowing whether the game is starting or not
+   */
   int no_barrier_detected(const std::vector<double> ranges){
     if(!ranges.empty()){
       for(int i=1; i<ranges.size()-1; i++){
@@ -38,7 +45,10 @@ class StateMachine {
     return 1;
   }
 
-  double distance_from_barrier(const std::vector<double> ranges, const std::vector<double> angles){
+  /**
+   * Compute the distance between flappy bird and the barrier
+   */
+  double compute_dist_from_barrier(const std::vector<double> ranges, const std::vector<double> angles){
     double min_dist = -1;
     if(!ranges.empty()){
       for(int i=2; i<ranges.size()-2; i++){
@@ -51,6 +61,9 @@ class StateMachine {
     return min_dist;
   }
 
+  /**
+   * Return 1 if flappy bird is less than 1 m away from an obstacle, 0 otherwise
+   */
   int obstacle_close(const std::vector<double> ranges){
     if(!ranges.empty()){
       for(int i=0; i<ranges.size(); i++){
@@ -60,6 +73,9 @@ class StateMachine {
     return 0;
   }
 
+  /**
+   * Return 1 if the 3 front beams do not detect the barrier, 0 otherwise
+   */
   int front_is_clear(const std::vector<double> ranges){
     if(!ranges.empty()){
       if(ranges[ranges.size()/2] < 2 || ranges[ranges.size()/2-1] < 2 || ranges[ranges.size()/2+1] < 2){
@@ -69,14 +85,26 @@ class StateMachine {
     return 1;
   }
 
+  /**
+   * Return 1 if flappy bird is less than 0.4 m away from the floor, 0 otherwise
+   */
   int floor_close(const std::vector<double> ranges){
     return ranges.front() < 0.4;
   }
 
+  /**
+   * Return 1 if flappy bird is less than 0.4 m away from the ceiling, 0 otherwise
+   */
   int ceiling_close(const std::vector<double> ranges){
     return ranges.back() < 0.4;
   }
 
+  /**
+   * Determine whether there exists 2 adjacent beams not hitting the barrier (free beams).
+   * Return UP if both adjacent beams are pointing up
+   * Retun DOWN if both adjacent beams are pointing down
+   * Return NONE if no adjacent free beams were detected
+   */
   int adjacent_beams_detector(const std::vector<double> ranges, const std::vector<double> angles){
     for(int i=0; i<ranges.size()-1; i++){
       if(ranges[i] > 2 && ranges[i+1] > 2){
@@ -91,6 +119,12 @@ class StateMachine {
     return NONE;
   }
 
+  /**
+   * Compute a weighted average of the angles. The weight are their respective range.
+   * It allows choosing the direction (up or down) during the search state. The returned angle
+   * will tend to point toward a direction where the ranges are larger, and therefore where the 
+   * path is free from obstacles
+   */
   double compute_direction(const std::vector<double> ranges, const std::vector<double> angles){
     double sum_ranges = 0;
     double weighted_sum_angles = 0;
@@ -111,46 +145,83 @@ class StateMachine {
   geometry_msgs::Vector3 compute_acc(const std::vector<double> ranges, 
                                      const std::vector<double> angles, 
                                      const geometry_msgs::Vector3::ConstPtr& vel_msg){
-    geometry_msgs::Vector3 acc_cmd;
-    double vx_goal;
-    double vy_goal;
-    static int vertical_dir;
-    static int vertical_scan_initialized = 0;
-    static int iter[8];
-    static double integral_vel_y = 0;
-    static double dead_distance = 0;
-    static double y_pos = 0;
+
+    geometry_msgs::Vector3 acc_cmd;               // Acceleration command
+    double vx_goal;                               // Desired x velocity
+    double vy_goal;                               // Desired y velocity
+    static int vertical_dir;                      // UP or DOWN. Direction to take in the vertical scan state
+    static int vertical_scan_initialized;         // Specify whether the vertical scan direction was chosen
+    static double integral_vel_y;                 // Distance covered along the y-axis since the beginning of the search state
+    static double y_pos;                          // Postion of flappy bird along the y-axis
+    
+    /**
+     * In the cross_barrier state, distance covered along the x-axis
+     * since the barrier is no longer detected 
+     */
+    static double dead_distance;
+
+    /**
+     * For each pair of adjacent beams, specifiy the number of
+     * consecutive steps where the beam pair was not detecting the barrier
+     */
+    static int adjacent_iter[8];               
 
     ROS_INFO("%f, %f", vel_msg->x, vel_msg->y);
 
+    // Intergrate the velocity along the y-axis to compute the position of the bird with respect to the middle
     y_pos += vel_msg->y/30.0;
 
     switch(m_state){
+      /**
+       * Search state: 
+       * 
+       */
       case SEARCH: 
+        // Compute distance covered since the begininng of the search state
         integral_vel_y += vel_msg->y/30.0;
+
+        // Before the first barrier, reset the y-axis origin if flappy bird is centered
         if(!ranges.empty() && no_barrier_detected(ranges)){
           if(abs(ranges.front()-ranges.back())<0.05){
             y_pos = 0;
           }
         }
-        if(imminent_collision(ranges)){
+
+        // If flappy bird is too close from the barrier, enter the vertical scan state
+        if(imminent_collision(ranges, angles)){
           m_state = VERTICAL_SCAN;
           ROS_INFO("vertical_scan");
+          for(int i=0; i<8; i++){
+            adjacent_iter[i] = 0;
+          }
         }
+
+        // If flappy bird is in front of and close to the opening, enter the cross_barrier state
         else if(front_is_clear(ranges) && obstacle_close(ranges)){
           m_state = CROSS_BARRIER;
-          ROS_INFO("cross");
+          ROS_INFO("cross_barrier");
+          for(int i=0; i<8; i++){
+            adjacent_iter[i] = 0;
+          }
         }
+
+        // Search the opening
         else{
+          // Compute the distance between flappy bird and the barrier
+          double dist_from_barrier = compute_dist_from_barrier(ranges, angles);
           
-          double dist_from_barrier = distance_from_barrier(ranges, angles);
-          
-          int adj_beams_found = 0;
+          int adj_beams_found = 0; // Specify whether 2 free adjacent beams were found
+
           if(!ranges.empty() && dist_from_barrier < 2){
+            // Look for free adjacent beams
             for(int i=0; i<ranges.size()-1; i++){
               if(ranges[i+1]*cos(angles[i+1]) > dist_from_barrier+0.3 && ranges[i]*cos(angles[i]) > dist_from_barrier+0.3){
-                if(++iter[i] >= 3){
-                  //ROS_INFO("adj_beams");
+                /**
+                 * If the number of consecutive steps where 2 adjacent beams are free is higher than a threshold,
+                 * follow their trajectory
+                */
+                if(++adjacent_iter[i] >= 3){
+                  //Choose which beam to follow according to whether it is pointing up or down
                   double dir;
                   if(i <= 3){
                     dir = angles[i];
@@ -168,16 +239,27 @@ class StateMachine {
               }
             }
           }
+
+          /**
+          * If no free adjacent beams were found, compute the weighted average of the 
+          * angles to orient the research
+          */
           if(!adj_beams_found){
-            //ROS_INFO("compute_dir");
+            // Compute the weighted average of the angles
             double dir = compute_direction(ranges, angles);
+
+            // Fix and limit the x-velocity according to the distance to the barrier
             if(dist_from_barrier < 1.25){
               vx_goal = 1.6;
             }
             else{
               vx_goal = 2.25;
             }
+
+            // Compute the y-velocity
             vy_goal = 20*vx_goal*dir;
+
+            // Limit the y-velocity to avoid overshooting before facing the opening
             if(vy_goal > 2){
               vy_goal = 2;
             }
@@ -190,7 +272,7 @@ class StateMachine {
         }
       
       /** Vertical scan state: If flappy bird is too close from the barrier while he did not find the openeing,
-       *  he stops and scans the barrier vertically until he finds the openeing
+       *  he stops and scans the barrier vertically until he finds the opening
       */
       case VERTICAL_SCAN: 
         if(front_is_clear(ranges)){  // Check if Flappy bird is facing the opening
@@ -241,6 +323,7 @@ class StateMachine {
       */
       case CROSS_BARRIER: 
         vy_goal = 0;
+        vx_goal = 2.75;
         if(!obstacle_close(ranges)){
           dead_distance += vel_msg->x/30.0;
           if(dead_distance > 0.175){
@@ -248,12 +331,7 @@ class StateMachine {
             m_state = SEARCH;
             ROS_INFO("search");
           }
-          vx_goal = 2.75;
         }
-        else{
-          vx_goal = 2.75;
-        }
-        
         break;
       default: break;
     }
