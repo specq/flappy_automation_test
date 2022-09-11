@@ -155,7 +155,10 @@ geometry_msgs::Vector3 StateMachine::compute_acc(const std::vector<double> range
    * For each pair of adjacent beams, specifiy the number of
    * consecutive steps where the beam pair was not detecting the barrier
    */
-  static int adjacent_iter[8];               
+  static std::vector<int> adjacent_iter;               
+  if(!ranges.empty() && adjacent_iter.empty()){
+    adjacent_iter.resize(ranges.size()-1);
+  }
 
   ROS_INFO("%f, %f", vel_msg->x, vel_msg->y);
 
@@ -170,7 +173,7 @@ geometry_msgs::Vector3 StateMachine::compute_acc(const std::vector<double> range
      * based on the weighted average of the laser scan angles.
      */
     case SEARCH: 
-      // Compute distance covered since the begininng of the search state
+      // Compute y distance covered since the begininng of the search state
       integral_vel_y += vel_msg->y/ROS_RATE;
 
       // Before the first barrier, reset the y-axis origin if flappy bird is centered
@@ -184,7 +187,7 @@ geometry_msgs::Vector3 StateMachine::compute_acc(const std::vector<double> range
       if(imminent_collision(ranges, angles)){
         m_state = VERTICAL_SCAN;
         ROS_INFO("vertical_scan");
-        for(int i=0; i<8; i++){
+        for(int i=0; i<adjacent_iter.size(); i++){
           adjacent_iter[i] = 0;
         }
       }
@@ -193,7 +196,7 @@ geometry_msgs::Vector3 StateMachine::compute_acc(const std::vector<double> range
       else if(front_is_clear(ranges) && obstacle_close(ranges)){
         m_state = CROSS_BARRIER;
         ROS_INFO("cross_barrier");
-        for(int i=0; i<8; i++){
+        for(int i=0; i<adjacent_iter.size(); i++){
           adjacent_iter[i] = 0;
         }
       }
@@ -264,10 +267,10 @@ geometry_msgs::Vector3 StateMachine::compute_acc(const std::vector<double> range
       }
     
     /** Vertical scan state: If flappy bird is too close from the barrier while he did not find the openeing,
-     *  he stops and scans the barrier vertically until he finds the opening
+     *  he stops and scans the barrier vertically until it finds the opening
     */
     case VERTICAL_SCAN: 
-      // Check if Flappy bird is facing the opening
+      // Check whether Flappy bird is facing the opening
       if(front_is_clear(ranges)){ 
         m_state = CROSS_BARRIER;
         vertical_scan_initialized = 0;
@@ -318,7 +321,7 @@ geometry_msgs::Vector3 StateMachine::compute_acc(const std::vector<double> range
         break;
       }
 
-    /** Cross barrier state: Flappy bird moves horizontally until he no longer detects the barrier 
+    /** Cross barrier state: Flappy bird moves horizontally until it no longer detects the barrier 
      *  and reaches the dead distance. The dead distance is the distance covered after flappy bird
      *  no longer detects the barrier. It allows avoiding collisions with the barrier in case flappy bird faces 
      *  the next opening to early.

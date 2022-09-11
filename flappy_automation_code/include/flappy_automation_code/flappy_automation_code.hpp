@@ -44,6 +44,7 @@ class StateMachine {
    * Return 1 if flappy bird is less than 0.4 m away from the floor, 0 otherwise
    */
   int floor_close(const std::vector<double> ranges);
+  
   /**
    * Return 1 if flappy bird is less than 0.4 m away from the ceiling, 0 otherwise
    */
@@ -58,7 +59,7 @@ class StateMachine {
   int adjacent_beams_detector(const std::vector<double> ranges, const std::vector<double> angles);
 
   /**
-   * Compute a weighted average of the angles. The weight are their respective range.
+   * Compute a weighted average of the angles. The weights are their respective range.
    * It allows choosing the direction (up or down) during the search state. The returned angle
    * will tend to point toward a direction where the ranges are larger, and therefore where the 
    * path is free from obstacles
